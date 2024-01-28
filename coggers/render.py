@@ -29,13 +29,11 @@ class RenderCog(commands.Cog):
         ftd = None
         with open("data/tiledata.json") as t:
             j = load(t)
-            for td in j:
-                if td["name"] == name:
-                    ftd = td
-                    break
-        if ftd is not None:
-            return ftd
-        raise AssertionError(f"The tile `{name}` could not be found.")
+            try:
+                ftd = j[name]
+            except:
+                raise AssertionError(f"The tile `{name}` could not be found.")
+        return ftd
     
     async def makeimage(self, sprites, data, w, h):
         final = Image.new("RGBA", ((w+h+2)*12, (w+h+7)*6), (0,0,0,0))
@@ -64,7 +62,7 @@ class RenderCog(commands.Cog):
                 sp = row[i]
                 d = drow[i]
                 spa = np.array(sp, dtype=np.uint8)
-                if d["unit"] == "true":
+                if d["unit"]:
                     spa = np.pad(spa, ((1, 1), (1, 1), (0, 0)))
                     ker = np.array([[0, 1, 0],
                       [1, -8, 1],
@@ -118,9 +116,9 @@ class RenderCog(commands.Cog):
             spname = tile
             if "sprite" in td.keys():
                 spname = td["sprite"]
-            if td["frames"] == "1":
+            if td["frames"] == 1:
                 wobble = 0
-            if td["dir"] == "true":
+            if td["dir"]:
                 path = "data/sprites/" + spname + "_0_" + str(wobble+1) + ".png"
             else:
                 path = "data/sprites/" + spname + "_" + str(wobble+1) + ".png"
