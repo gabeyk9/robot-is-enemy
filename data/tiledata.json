@@ -273,7 +273,7 @@
         "unit": "true"
     },
     {
-        "name": "text_trees",
+        "name": "text_forest",
         "dir": "false",
         "ground": "0",
         "frames": "1",
@@ -329,7 +329,7 @@
         "unit": "true"
     },
     {
-        "name": "trees",
+        "name": "forest",
         "dir": "false",
         "ground": "1",
         "frames": "3",
