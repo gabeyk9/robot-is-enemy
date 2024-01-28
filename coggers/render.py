@@ -115,12 +115,15 @@ class RenderCog(commands.Cog):
             img = Image.new("RGBA", (24,24), (0,0,0,0))
         else:
             td = await self.tiledata(tile)
+            spname = tile
+            if "sprite" in td.keys():
+                spname = td["sprite"]
             if td["frames"] == "1":
                 wobble = 0
             if td["dir"] == "true":
-                path = "data/sprites/" + tile + "_0_" + str(wobble+1) + ".png"
+                path = "data/sprites/" + spname + "_0_" + str(wobble+1) + ".png"
             else:
-                path = "data/sprites/" + tile + "_" + str(wobble+1) + ".png"
+                path = "data/sprites/" + spname + "_" + str(wobble+1) + ".png"
             try:
                 img = Image.open(path).convert("RGBA")
             except:
