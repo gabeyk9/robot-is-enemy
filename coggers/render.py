@@ -47,20 +47,13 @@ class RenderCog(commands.Cog):
             drow = data[j]
             x = len(row) - 1
             for i in range(len(row)):
-                terrain = Image.open("data/special/terrain_0_1.png").convert("RGBA")
-                ta = np.array(terrain, dtype=np.uint8)
-                final = layer_ontop(final, ta, (x+y+1)*12, (y-x+w+2)*6)
-                x -= 1
-            y += 1
-
-        y = 0
-        for j in range(len(sprites)):
-            row = sprites[j]
-            drow = data[j]
-            x = len(row) - 1
-            for i in range(len(row)):
                 sp = row[i]
                 d = drow[i]
+                gh = d["ground"]
+                print(gh)
+                terrain = Image.open("data/special/terrain_0_1.png").convert("RGBA")
+                ta = np.array(terrain, dtype=np.uint8)
+                final = layer_ontop(final, ta, (x+y+1)*12, (y-x+w+2)*6 + gh*3)
                 spa = np.array(sp, dtype=np.uint8)
                 if d["unit"]:
                     spa = np.pad(spa, ((1, 1), (1, 1), (0, 0)))
@@ -74,7 +67,7 @@ class RenderCog(commands.Cog):
                     base[mask, ...] = 0
                     base = recolor(base, (8,8,8,255))
                     spa = layer_ontop(spa, base, 0, 0)
-                final = layer_ontop(final, spa, (x+y+2)*12 - spa.shape[1]//2, (y-x+w+2)*6 - spa.shape[0]//2)
+                final = layer_ontop(final, spa, (x+y+2)*12 - spa.shape[1]//2, (y-x+w+2)*6 - spa.shape[0]//2 + gh*3)
                 x -= 1
             y += 1
 
@@ -108,7 +101,7 @@ class RenderCog(commands.Cog):
                 tile = "text_" + tile[1:]
             except:
                 pass
-        td = {"name":"", "dir":"false", "ground":"0", "frames":"1", "unit":"false"}
+        td = {"name":"", "dir":False, "ground":0, "frames":1, "unit":False}
         if tile in ["-", ""]:
             img = Image.new("RGBA", (24,24), (0,0,0,0))
         else:
