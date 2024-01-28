@@ -8,9 +8,9 @@ import config
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from coggers.parser import ParserCog
-    from coggers.data import DataCog
+from coggers.variants import VariantCog
+from coggers.parser import ParserCog
+from coggers.data import DataCog
 
 
 class Context(commands.Context):  # taken from ric
@@ -36,8 +36,9 @@ class Context(commands.Context):  # taken from ric
 
 
 class Bot(commands.Bot):
-    parser: commands.Cog
-    data: commands.Cog
+    parser: ParserCog
+    data: DataCog
+    variant_handler: VariantCog
 
     def __init__(self, *args, cogs, **kwargs):
         super().__init__(*args, **kwargs)

@@ -35,7 +35,37 @@ for name, data in pairs(unitlist) do
 	parts[#parts + 1] = ",\n\t"
 end
 
-parts[#parts] = "\n}"
+parts[#parts + 1] = [["terrain_0": {
+		"dir": false,
+		"ground": 0,
+		"frames": 1,
+		"unit": false
+	},
+	"terrain_1": {
+		"dir": false,
+		"ground": 0,
+		"frames": 1,
+		"unit": false
+	},
+	"terrain_2": {
+		"dir": false,
+		"ground": 0,
+		"frames": 1,
+		"unit": false
+	},
+	"terrain_3": {
+		"dir": false,
+		"ground": 0,
+		"frames": 1,
+		"unit": false
+	},
+	"terrain_4": {
+		"dir": false,
+		"ground": 0,
+		"frames": 1,
+		"unit": false
+	}
+}]]
 
 file, error = io.open(arg[2], "w")
 if file == nil then

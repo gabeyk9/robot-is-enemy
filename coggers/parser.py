@@ -1,118 +1,124 @@
 import json
+import math
 import re
+from functools import total_ordering
 
 from discord.ext import commands
 from attrs import define
 
 from typing import TYPE_CHECKING
+from classes import Tile, Scene, Variant, CustomError
+from coggers.data import TileData
 
 if TYPE_CHECKING:
     from ROBOT import Bot
 else:
-    class Scene: pass
-    class Bot: pass
-
-@define
-class Variant:
-    """A single variant."""
-
-    """The variant's name."""
-    name: str
-
-    """The variant's arguments."""
-    arguments: list
-
-    @classmethod
-    def from_string(cls, var):
-        name, *arguments = var.split("/")
-        return cls(name, arguments)
-
-
-@define
-class Tile:
-    """Holds the data for a tile on the grid."""
-
-    """The tile's name."""
-    name: str
-
-    """The tile's X position."""
-    x: int
-
-    """The tile's Y position."""
-    y: int
-
-    """The tile's Z position."""
-    z: int
-
-    """The tile's timestamp."""
-    t: int
-
-    """Any variants the tile has."""
-    # TODO: Variant parsing
-    variants: list[Variant]
-
-
-@define
-class Scene:
-    """A render scene."""
-
-    """The width of the scene."""
-    width: int
-
-    """The height of the scene."""
-    height: int
-
-    """The depth of the scene."""
-    depth: int
-
-    """The length of the scene."""
-    length: int
-
-    """A sparse tile grid."""
-    tiles: list[Tile]
+    class Bot:
+        pass
 
 
 # noinspection PyMethodMayBeStatic
 class ParserCog(commands.Cog):
     """Cog for handling parsing scenes."""
 
-    def parse(self, string) -> Scene:
-        """Parses a string into a scene."""
-        # TODO: Flags (should be handled before grid splitting)
+    def __init__(self, bot: Bot):
+        self.bot = bot
 
+    def parse(self, string: str) -> Scene:
+        """Parses a string into a scene."""
+        # Parse flags
+        matches = [match for match in re.finditer(r"--?([^=\s]+)(?:=(\S+))?\s+", string)]
+        matches.reverse()  # so that removing a match doesn't mess up other matches
+        flags = {}
+        for match in matches:
+            # Remove the flag
+            string = string[:match.start()] + string[match.end():]
+            key, value = match.groups()
+            flags[key] = value
+        ground = flags["ground"] if "ground" in flags else "terrain_0"
         # Split string into lines, then cells, then stack, then time
         rows = string.split("\n")
         parsed_tiles = []
-        time, depth, height, width = 0, 0, 0, 0
+        dims = (0.0, 0.0, (0.0, 0.0), 0.0)
         for y, row in enumerate(rows):
             stacks = row.split(" ")
             for x, stack in enumerate(stacks):
+                maybe_terrain = stack.split("%", 1)
+                if len(maybe_terrain) == 2:
+                    stack = maybe_terrain[1]
+                    terrain = maybe_terrain[0]
+                else:
+                    stack = maybe_terrain[0]
+                    terrain = ground
                 steps = re.split(r"(?!\\\\)&", stack)
+
+                offset = 0
                 for z, step in enumerate(steps):
-                    tiles = step.split(">")
-                    for t, tile in enumerate(tiles):
-                        time = max(time, t)
-                        depth = max(depth, z)
-                        height = max(height, y)
-                        width = max(width, x)
-                        tile = re.sub(r"\\(.)", r"\1", tile)
-                        name, *variants = tile.split(":")
-                        variants = [
-                            Variant.from_string(var) for var in variants
-                        ]
-                        parsed_tiles.append(Tile(
-                            name,
-                            x, y, z, t,
-                            variants
-                        ))
+                    tiles = step.split("|")
+                    for p, tile in enumerate(tiles):
+                        parsed, dims, this_offset = self.parse_cell((x, y, z, p), tile, dims)
+                        offset = max(this_offset, offset)
+                        parsed_tiles.append(parsed)
+
+                # Handle terrain
+                terrain_parts = terrain.split("|")
+                for p, floor in enumerate(terrain_parts):
+                    parsed, dims, _ = self.parse_cell((x, y, -1 - (offset / 4), p), floor, dims)
+                    parsed_tiles.append(parsed)
+
+        # Sort tiles
+        parsed_tiles.sort()
 
         return Scene(
-            width,
-            height,
-            depth,
-            time,
+            dims[0],
+            dims[1],
+            dims[2][0],
+            dims[2][1],
+            dims[3],
             parsed_tiles
         )
+
+    def parse_cell(
+            self,
+            position: tuple[float, float, float, float],
+            name: str,
+            dimensions: tuple[float, float, tuple[float, float], float]
+    ) -> tuple[Tile, tuple[float, float, tuple[float, float], float], int] | None:
+        """Parses a single cell."""
+        width = max(dimensions[0], position[0])
+        height = max(dimensions[1], position[1])
+        max_depth = max(dimensions[2][1], position[2])
+        min_depth = min(dimensions[2][0], position[2])
+        pixel_depth = max(dimensions[3], position[3])
+        dimensions = (width, height, (min_depth, max_depth), pixel_depth)
+
+        name = re.sub(r"\\(.)", r"\1", name)
+        name, *variants = name.split(":")
+        name: str
+        if name in [".", ""]:  # Empty
+            return None
+        if name.startswith("$"):
+            name = "text_" + name.removeprefix("$")
+        if name.startswith("#"):
+            name = "terrain_" + name.removeprefix("#")
+        data = self.bot.data.data.get(name)
+        if data is None:
+            raise CustomError(f"There's no tile called `{name}`.")
+        else:
+            offset = data.ground_height
+        variants = [
+            Variant.from_string(var) for var in variants
+        ]
+        # noinspection PyTypeChecker
+        # false alarm
+        tile = Tile(
+            name,
+            *position,
+            variants,
+            data
+        )
+        tile = self.bot.variant_handler.handle_tile_variants(tile)
+        return tile, dimensions, offset
 
 
 async def setup(bot: Bot):

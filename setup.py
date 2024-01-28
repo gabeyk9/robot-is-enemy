@@ -11,14 +11,14 @@ def main():
         print("Usage:\n\tsetup.py <path to MSB install>")
         return
     path = Path(args[1]) / 'Data'
-    if Path("data").exists():
-        shutil.rmtree("data")
-    os.mkdir("data")
-    os.mkdir("data/sprites")
-    os.system(f"lua converter.lua {path / 'values.lua'} data/values.json")
+    if Path("data/vanilla").exists():
+        shutil.rmtree("data/vanilla")
+    os.mkdir("data/vanilla")
+    os.mkdir("data/vanilla/sprites")
+    os.system(f"lua converter.lua {path / 'values.lua'} data/vanilla/tiles.json")
     for file in (path / 'assets' / 'default' / 'sprites').glob('*.png'):
-        shutil.copy2(file, "data/sprites/")
-    shutil.copytree(path / 'assets' / 'default' / 'sprites' / 'terrain', "data/terrain/")
+        shutil.copy2(file, "data/vanilla/sprites/")
+    shutil.copytree(path / 'assets' / 'default' / 'sprites' / 'terrain', "data/vanilla/sprites/", dirs_exist_ok=True)
     print("Done")
 
 

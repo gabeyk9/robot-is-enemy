@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from discord.ext import commands
 from attrs import define
@@ -27,6 +28,9 @@ class TileData:
     """Whether or not this tile is a unit."""
     unit: bool
 
+    """The directory that this tile resides in."""
+    directory: str
+
 
 class DataCog(commands.Cog):
     """Cog for handling loading data."""
@@ -37,17 +41,19 @@ class DataCog(commands.Cog):
     """Loads tile data for all tiles."""
 
     def load_tile_data(self):
-        with open("data/values.json") as t:
-            obj: dict[str, dict] = json.load(t)
         self.data = {}
-        for (name, tile) in obj.items():
-            tile_data = TileData(
-                tile["dir"],
-                tile["ground"],
-                tile["frames"],
-                tile["unit"]
-            )
-            self.data[name] = tile_data
+        for path in Path("data").glob("*/"):
+            with open(path / "tiles.json") as t:
+                obj: dict[str, dict] = json.load(t)
+            for (name, tile) in obj.items():
+                tile_data = TileData(
+                    tile["dir"],
+                    tile["ground"],
+                    tile["frames"],
+                    tile["unit"],
+                    path.name
+                )
+                self.data[name] = tile_data
 
 
 async def setup(bot: Bot):
