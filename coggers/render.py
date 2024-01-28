@@ -1,186 +1,196 @@
+import io
+from pathlib import Path
+
+import cv2
 from PIL import Image
 import numpy as np
-from json import load
 from datetime import datetime
 import discord
 from discord.ext import commands
 from io import BytesIO
-import cv2
 
-def layer_ontop(a1, a2, x, y):
-    for i in range(a2.shape[0]):
-        for j in range(a2.shape[1]):
-            if a2[i, j, 3] != 0:
-                a1[i+y, j+x] = a2[i, j]
-    return a1
+from typing import TYPE_CHECKING
 
-def recolor(sprite: Image.Image | np.ndarray, rgba: tuple[int, int, int, int]) -> Image.Image:
-    """Apply rgba color multiplication (0-255)""" #ty ric
-    arr = np.multiply(sprite, np.array(rgba) / 255, casting="unsafe").astype(np.uint8)
-    if isinstance(sprite, np.ndarray):
-        return arr
-    return Image.fromarray(arr)
+from coggers.data import TileData
+from classes import CustomError, Tile
 
+if TYPE_CHECKING:
+    from ROBOT import Bot
+    from coggers.parser import Scene, Variant
+else:
+    class Scene:
+        pass
+
+
+    class Bot:
+        pass
+
+
+# noinspection PyMethodMayBeStatic
 class RenderCog(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    sprite_cache: dict[str, Image]
+
+    def __init__(self, bot: Bot):
         self.bot = bot
+        self.sprite_cache = {"-": None, "": None}
 
-    async def tiledata(self, name):
-        ftd = None
-        with open("data/tiledata.json") as t:
-            j = load(t)
-            try:
-                ftd = j[name]
-            except:
-                raise AssertionError(f"The tile `{name}` could not be found.")
-        return ftd
-    
-    async def makeimage(self, sprites, data, w, h):
-        final = Image.new("RGBA", ((w+h+2)*12, (w+h+7)*6), (0,0,0,0))
-        
-        final = np.array(final, dtype=np.uint8)
+    SPACING: int = 12
+    BACKGROUND_COLOR: tuple[int, int, int, int] = (0x40, 0x44, 0x64, 0xFF)
+    UNIT_KERNEL: np.ndarray = np.array([
+        [0,  1, 0],
+        [1, -6, 1],
+        [1,  1, 1]
+    ])
 
-        #adding ground
-        y = 0
-        for j in range(len(sprites)):
-            row = sprites[j]
-            drow = data[j]
-            x = len(row) - 1
-            for i in range(len(row)):
-                sp = row[i]
-                d = drow[i]
-                gh = d["ground"]
-                print(gh)
-                terrain = Image.open("data/special/terrain_0_1.png").convert("RGBA")
-                ta = np.array(terrain, dtype=np.uint8)
-                final = layer_ontop(final, ta, (x+y+1)*12, (y-x+w+2)*6 + gh*3)
-                spa = np.array(sp, dtype=np.uint8)
-                if d["unit"]:
-                    spa = np.pad(spa, ((1, 1), (1, 1), (0, 0)))
-                    ker = np.array([[0, 1, 0],
-                      [1, -8, 1],
-                      [1, 1, 1]])
-                    base = spa[..., 3]
-                    base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
-                    base = np.dstack((base, base, base, base))
-                    mask = spa[..., 3] > 0
-                    base[mask, ...] = 0
-                    base = recolor(base, (8,8,8,255))
-                    spa = layer_ontop(spa, base, 0, 0)
-                final = layer_ontop(final, spa, (x+y+2)*12 - spa.shape[1]//2, (y-x+w+2)*6 - spa.shape[0]//2 + gh*3)
-                x -= 1
-            y += 1
+    def recolor(self, sprite: Image.Image | np.ndarray, rgba: tuple[int, int, int, int]) -> Image.Image | np.ndarray:
+        """Apply rgba color multiplication. (0-255)"""
+        arr = np.multiply(sprite, np.array(rgba) / 255, casting="unsafe").astype(np.uint8)
+        if isinstance(sprite, np.ndarray):
+            return arr
+        return Image.fromarray(arr)
 
-        final = np.pad(final, ((1, 1), (1, 1), (0, 0)))
-        ker = np.array([[0, 1, 0],
-            [1, -8, 1],
-            [1, 1, 1]])
-        base = final[..., 3]
-        base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
-        base = np.dstack((base, base, base, base))
-        mask = final[..., 3] > 0
-        base[mask, ...] = 0
-        base = recolor(base, (8,8,8,255))
-        final = layer_ontop(final, base, 0, 0)
+    async def render_scene(self, scene: Scene) -> list[Image]:
+        width = (scene.width + scene.height + 4) * self.SPACING
+        height = (scene.height + scene.width + 6 + ((scene.max_depth - scene.min_depth) * 2)) * (self.SPACING // 2)
+        bg = Image.new("RGBA", (int(width), int(height)), self.BACKGROUND_COLOR)
+        empty = Image.new("RGBA", (int(width), int(height)), (0, 0, 0, 0))
+        final = []
 
-        end = Image.new("RGBA", ((w+h+2)*12, (w+h+7)*6), (0x40, 0x44, 0x64))
-        ea = np.array(end, dtype=np.uint8)
-        final = layer_ontop(ea, final, 0,0)
-
-        # -m=2 effect
-        dim = final.shape[:2] * np.array((2, 2))
-        dim = dim.astype(int)
-        final = cv2.resize(final[:, ::-1], dim[::-1], interpolation=cv2.INTER_NEAREST)[:, ::-1]
-
-        final = Image.fromarray(final)
-        return final
-    
-    async def getsd(self, tile, wobble):
-        if tile[0] == "$":
-            try:
-                tile = "text_" + tile[1:]
-            except:
-                pass
-        td = {"name":"", "dir":False, "ground":0, "frames":1, "unit":False}
-        if tile in ["-", ""]:
-            img = Image.new("RGBA", (24,24), (0,0,0,0))
-        else:
-            td = await self.tiledata(tile)
-            spname = tile
-            if "sprite" in td.keys():
-                spname = td["sprite"]
-            if td["frames"] == 1:
-                wobble = 0
-            if td["dir"]:
-                path = "data/sprites/" + spname + "_0_" + str(wobble+1) + ".png"
-            else:
-                path = "data/sprites/" + spname + "_" + str(wobble+1) + ".png"
-            try:
-                img = Image.open(path).convert("RGBA")
-            except:
-                raise AssertionError(f"Files for `{tile}` not found. Path: `{path}`")
-        return img, td
-
-    async def render(self, ctx, objs):
-        desc = f"`{ctx.message.content.split(' ', 1)[0]} {objs}`"
-        # splitting
-        nobjs = objs.split("\n")
-        nnobjs = []
-        for obj in nobjs:
-            obj = obj.split(" ")
-            nnobjs.append(obj[::-1])
-        objs = nnobjs
-
-        images = []
         for wobble in range(3):
-            sprites = []
-            data = []
-            for row in objs:
-                sprites.append([])
-                data.append([])
-                for tile in row:
-                    img, td = await self.getsd(tile, wobble)
-                    sprow = sprites[-1]
-                    drow = data[-1]
-                    sprow.append(img)
-                    drow.append(td)
+            frame = empty.copy()
+            background = bg.copy()
+            for tile in scene.tiles:
+                tile: Tile
+                # Add sprites to tile
+                sprite = self.get_sprite(tile.name, wobble)
+                if sprite is None:
+                    continue
+                data = self.bot.data.data.get(tile.name)
 
-            #combining
-            h = 0
-            w = 0
-            for row in sprites:
-                h += 1
-                w = max(w, len(row))
+                # Handle sprite variants
+                sprite = self.bot.variant_handler.handle_sprite_variants(tile, sprite)
 
-            final = await self.makeimage(sprites, data, w, h)
+                # TODO: Reimplement border
+                # sp = row[i]
+                # d = drow[i]
+                # spa = np.array(sp, dtype=np.uint8)
+                # if d["unit"] == "true":
+                #     spa = np.pad(spa, ((1, 1), (1, 1), (0, 0)))
+                #     ker = np.array([[0, 1, 0],
+                #                     [1, -8, 1],
+                #                     [1, 1, 1]])
+                #     base = spa[..., 3]
+                #     base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
+                #     base = np.dstack((base, base, base, base))
+                #     mask = spa[..., 3] > 0
+                #     base[mask, ...] = 0
+                #     base = recolor(base, (8, 8, 8, 255))
+                #     spa = layer_ontop(spa, base, 0, 0)
+                if tile.data.unit:
+                    sprite = np.array(sprite)
+                    sprite = np.pad(sprite, ((1, 1), (1, 1), (0, 0)))
+                    base = sprite[..., 3]
+                    base = cv2.filter2D(src=base, ddepth=-1, kernel=self.UNIT_KERNEL)
+                    base = np.dstack((base, base, base, base))
+                    mask = sprite[..., 3] > 0
+                    base[mask, ...] = 0
+                    base = self.recolor(base, (8, 8, 8, 255))
+                    base = Image.fromarray(base)
+                    sprite = Image.fromarray(sprite)
+                    sprite.alpha_composite(base)
+                # Adjust coordinates for 3D isometric view
+                x_pos = (tile.x + tile.y + 2) * self.SPACING - sprite.width // 2
+                y_pos = (
+                        (tile.y - tile.x + scene.width + 3 + scene.max_depth * 2)
+                        * (self.SPACING // 2)
+                        - sprite.height // 2
+                        + data.ground_height * 3
+                        - tile.z * self.SPACING
+                )
+                frame.alpha_composite(sprite, (int(x_pos), int(y_pos)))
 
-            images.append(final)
+                # TODO: Reimplement whatever the fuck this is
+                # base = final[..., 3]
+                # base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
+                # base = np.dstack((base, base, base, base))
+                # mask = final[..., 3] > 0
+                # base[mask, ...] = 0
+                # base = recolor(base, (8, 8, 8, 255))
+                # final = layer_ontop(final, base, 0, 0)
+                # end = Image.new("RGBA", ((width + height + 2) * 12, (width + height + 7) * 6), (0x40, 0x44, 0x64))
+                # ea = np.array(end, dtype=np.uint8)
+                # final = layer_ontop(ea, final, 0, 0)
+                # # -m=2 effect
+                # dim = final.shape[:2] * np.array((2, 2))
+                # dim = dim.astype(int)
+                # final = cv2.resize(final[:, ::-1], dim[::-1], interpolation=cv2.INTER_NEAREST)[:, ::-1]
 
+            frame = np.array(frame)
+            frame = np.pad(frame, ((1, 1), (1, 1), (0, 0)))
+            base = frame[..., 3]
+            base = cv2.filter2D(src=base, ddepth=-1, kernel=self.UNIT_KERNEL)
+            base = np.dstack((base, base, base, base))
+            mask = frame[..., 3] > 0
+            base[mask, ...] = 0
+            base = self.recolor(base, (8, 8, 8, 255))
+            base = Image.fromarray(base)
+            frame = Image.fromarray(frame)
+            frame.alpha_composite(base)
+            background.alpha_composite(frame)
+            frame = background
+
+            frame = frame.resize((frame.width * 2, frame.height * 2), Image.Resampling.NEAREST)
+            final.append(frame)
+
+        return final
+
+    def get_sprite(self, tile: str, wobble: int) -> Image.Image | None:
+        key = f"{tile} {wobble}"
+        if key in self.sprite_cache:
+            return self.sprite_cache[key]
+
+        data: TileData = self.bot.data.data.get(tile)
+        if data.frames == 1:
+            wobble = 0
+        infix = "_0_" if data.directional else "_"
+        path = "sprites/" + tile + infix + str(wobble + 1) + ".png"
+        try:
+            path = Path("data", data.directory, path)
+            with Image.open(path) as im:
+                img = im.convert("RGBA").copy()
+        except FileNotFoundError:
+            raise CustomError(f"Files for `{tile}` not found.\nPath: `{path}`")
+        self.sprite_cache[key] = img
+        return img
+
+    async def render(self, scene: Scene, buffer: BytesIO):
+        """Renders a scene into a buffer."""
+        frames: list[Image.Image] = await self.render_scene(scene)
         kwargs = {
-                'format': "GIF",
-                'interlace': True,
-                'save_all': True,
-                'append_images': images[1:],
-                'loop': 0,
-                'duration': [600]*3,
-                'optimize': False
-            }
+            'format': "GIF",
+            'interlace': True,
+            'save_all': True,
+            'append_images': frames[1:],
+            'loop': 0,
+            'duration': 600,
+            'optimize': False,
+            'disposal': 2
+        }
+        frames[0].save(
+            buffer,
+            **kwargs
+        )
 
-        out = BytesIO()
-        images[0].save(
-                out,
-                **kwargs
-            )
+    @commands.command(name="render", aliases=["r", "t", "tile"])
+    async def render_tiles(self, ctx, *, objs: str):
+        scene = self.bot.parser.parse(objs)
+        buf = io.BytesIO()
+        await self.render(scene, buf)
+        buf.seek(0)
         filename = datetime.utcnow().strftime(
-                    f"render_%Y-%m-%d_%H.%M.%S.gif") #for now- will gif-ify it later
-        out.seek(0)
-        image = discord.File(out, filename=filename)
-
-        await ctx.send(desc[:2000], file=image)
-
-    @commands.command(name="render", aliases=["r"])
-    async def render_tiles(self, ctx, *, objs):
-        await self.render(ctx, objs)
-
+            f"render_%Y-%m-%d_%H.%M.%S.gif"  # for now - will gif-ify it later
+        )
+        # TODO: Command parroting
+        await ctx.send(file=discord.File(buf, filename))
 async def setup(bot: commands.Bot):
     await bot.add_cog(RenderCog(bot))
