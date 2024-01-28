@@ -4,8 +4,16 @@ import os
 import auth
 import asyncio
 
+import config
 
-class Context(commands.Context): #taken from ric
+from typing import TYPE_CHECKING
+
+from coggers.variants import VariantCog
+from coggers.parser import ParserCog
+from coggers.data import DataCog
+
+
+class Context(commands.Context):  # taken from ric
     silent: bool = False
 
     async def send(self, content: str = "", embed: discord.Embed | None = None, **kwargs):
@@ -26,17 +34,25 @@ class Context(commands.Context): #taken from ric
         kwargs['reference'] = self.message
         return await self.send(*args, **kwargs)
 
+
 class Bot(commands.Bot):
+    parser: ParserCog
+    data: DataCog
+    variant_handler: VariantCog
+
     def __init__(self, *args, cogs, **kwargs):
         super().__init__(*args, **kwargs)
+
         async def gather_cogs():
             await asyncio.gather(*(self.load_extension(cog, package='ROBOT') for cog in cogs))
 
         asyncio.run(gather_cogs())
+        print("Bot is running!")
+
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = Bot(cogs=["coggers.render", "coggers.error", "coggers.owner"], command_prefix='%', intents=intents)
+bot = Bot(cogs=config.cogs, command_prefix=config.prefix, intents=intents)
 
 bot.run(auth.token, log_handler=None)
