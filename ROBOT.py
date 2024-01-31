@@ -53,6 +53,6 @@ class Bot(commands.Bot):
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = Bot(cogs=config.cogs, command_prefix=config.prefix, intents=intents)
+bot = Bot(cogs=config.cogs, command_prefix=config.prefix, intents=intents, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False),)
 
 bot.run(auth.token, log_handler=None)

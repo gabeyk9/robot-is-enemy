@@ -8,7 +8,7 @@ from attrs import define
 
 from typing import TYPE_CHECKING
 from classes import Tile, Scene, Variant, CustomError
-from coggers.data import TileData
+from coggers.data import TileData, FlagData
 
 if TYPE_CHECKING:
     from ROBOT import Bot
@@ -24,10 +24,10 @@ class ParserCog(commands.Cog):
     def __init__(self, bot: Bot):
         self.bot = bot
 
-    def parse(self, string: str) -> Scene:
+    def parse(self, string: str, flagdata: FlagData) -> Scene:
         """Parses a string into a scene."""
         # Parse flags
-        matches = [match for match in re.finditer(r"--?([^=\s]+)(?:=(\S+))?\s+", string)]
+        matches = [match for match in re.finditer(r"\s*--([^=\s]+)(?:=(\S+))?\s*", string)]
         matches.reverse()  # so that removing a match doesn't mess up other matches
         flags = {}
         for match in matches:
@@ -36,6 +36,15 @@ class ParserCog(commands.Cog):
             key, value = match.groups()
             flags[key] = value
         ground = flags["ground"] if "ground" in flags else "terrain_0"
+        if "bg" in flags:
+            value = flags["bg"]
+            if value.startswith("#"):
+                color_string = flags["bg"][1:]
+                color_int = int(color_string, base=16)
+                background = ((color_int & 0xFF0000) >> 16, (color_int & 0xFF00) >> 8, color_int & 0xFF, 0xFF)
+                flagdata.background = background
+            elif value == "transparent":
+                flagdata.background = (0x00, 0x00, 0x00, 0x00)
         # Split string into lines, then cells, then stack, then time
         rows = string.split("\n")
         parsed_tiles = []
@@ -56,14 +65,20 @@ class ParserCog(commands.Cog):
                 for z, step in enumerate(steps):
                     tiles = step.split("|")
                     for p, tile in enumerate(tiles):
-                        parsed, dims, this_offset = self.parse_cell((x, y, z, p), tile, dims)
+                        try:
+                            parsed, dims, this_offset = self.parse_cell((x, y, z, p), tile, dims)
+                        except TypeError:
+                            continue
                         offset = max(this_offset, offset)
                         parsed_tiles.append(parsed)
 
                 # Handle terrain
                 terrain_parts = terrain.split("|")
                 for p, floor in enumerate(terrain_parts):
-                    parsed, dims, _ = self.parse_cell((x, y, -1 - (offset / 4), p), floor, dims)
+                    try:
+                        parsed, dims, _ = self.parse_cell((x, y, -1 - (offset / 4), p), floor, dims)
+                    except TypeError:
+                        continue
                     parsed_tiles.append(parsed)
 
         # Sort tiles
@@ -103,19 +118,24 @@ class ParserCog(commands.Cog):
             name = "terrain_" + name.removeprefix("#")
         data = self.bot.data.data.get(name)
         if data is None:
-            raise CustomError(f"There's no tile called `{name}`.")
-        else:
-            offset = data.ground_height
+            if name.startswith("text_"):
+                data = TileData(directional=False, ground_height=0, frames=1, unit=True, directory="custom_text_")
+            else:
+                raise CustomError(f"There's no tile called `{name}`.")
+        offset = data.ground_height
         variants = [
             Variant.from_string(var) for var in variants
         ]
+        data_copy = data.copy()
         # noinspection PyTypeChecker
         # false alarm
+        variants_copy = variants.copy()
         tile = Tile(
             name,
             *position,
             variants,
-            data
+            variants_copy,
+            data_copy
         )
         tile = self.bot.variant_handler.handle_tile_variants(tile)
         return tile, dimensions, offset

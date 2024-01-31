@@ -30,7 +30,7 @@ for name, data in pairs(unitlist) do
 		data.directions or false,
 		data.ground or 0,
 		data.animframes or 1,
-		data.unit or false
+		data.unit or data.text or false
 	)
 	parts[#parts + 1] = ",\n\t"
 end

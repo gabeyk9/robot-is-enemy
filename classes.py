@@ -20,6 +20,10 @@ class Variant:
     def from_string(cls, var):
         name, *arguments = var.split("/")
         return cls(name, arguments)
+    
+    def copy(self):
+        new_variant = Variant(self.name, self.arguments)
+        return new_variant
 
 
 @define
@@ -44,8 +48,14 @@ class Tile:
     """Any variants the tile has."""
     variants: list[Variant]
 
+    """The currently unhandled variants."""
+    running_variants: list[Variant]
+
     """This tile's data."""
     data: TileData
+
+    """The tile's direction. Goes from 0 to 3."""
+    direction: int = 0
 
     def __lt__(self, other):
         """Returns whether this tile should be drawn under the other tile."""
@@ -77,7 +87,6 @@ class Scene:
 
     """A sparse tile grid."""
     tiles: list[Tile]
-
 
 class CustomError(Exception):
     pass
