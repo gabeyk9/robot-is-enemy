@@ -192,6 +192,13 @@ class VariantCog(commands.Cog):
                 arr[arr[..., 0] == 255] = 0
                 arr[arr[..., 3] > 0] = 255
                 image = Image.fromarray(arr)
+            elif variant.name in ("gs", "gscale", "grayscale"):
+                arr = np.array(image, dtype=np.uint8)
+                arr = arr.astype(np.uint16)
+                gray = (arr[..., 0] + arr[..., 1] + arr[..., 2]) // 3 
+                arr[..., 0], arr[..., 1], arr[..., 2] = gray, gray, gray
+                arr = arr.astype(np.uint8)
+                image = Image.fromarray(arr)
             else:
                 new_variants.append(variant)
         tile.running_variants = new_variants
