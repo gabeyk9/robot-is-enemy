@@ -30,16 +30,17 @@ else:
         pass
 
 CUSTOM_WIDTH = {
-    2:11,
-    3:13,
-    4:9
+    2: 11,
+    3: 13,
+    4: 9
 }
 
 CUSTOM_HEIGHT = {
-    2:11,
-    3:11,
-    4:9
+    2: 11,
+    3: 11,
+    4: 9
 }
+
 
 # noinspection PyMethodMayBeStatic
 class RenderCog(commands.Cog):
@@ -52,9 +53,9 @@ class RenderCog(commands.Cog):
 
     SPACING: int = 12
     UNIT_KERNEL: np.ndarray = np.array([
-        [0,  1, 0],
+        [0, 1, 0],
         [1, -6, 1],
-        [1,  1, 1]
+        [1, 1, 1]
     ])
 
     def recolor(self, sprite: Image.Image | np.ndarray, rgba: tuple[int, int, int, int]) -> Image.Image | np.ndarray:
@@ -80,7 +81,7 @@ class RenderCog(commands.Cog):
 
             for tile in scene.tiles:
                 tile: Tile
-                
+
                 # Reload the running variants
                 tile.running_variants = tile.variants.copy()
                 print("----")
@@ -97,22 +98,6 @@ class RenderCog(commands.Cog):
                 # Handle sprite variants
                 sprite = self.bot.variant_handler.handle_sprite_variants(tile, sprite)
 
-                # TODO: Reimplement border
-                # sp = row[i]
-                # d = drow[i]
-                # spa = np.array(sp, dtype=np.uint8)
-                # if d["unit"] == "true":
-                #     spa = np.pad(spa, ((1, 1), (1, 1), (0, 0)))
-                #     ker = np.array([[0, 1, 0],
-                #                     [1, -8, 1],
-                #                     [1, 1, 1]])
-                #     base = spa[..., 3]
-                #     base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
-                #     base = np.dstack((base, base, base, base))
-                #     mask = spa[..., 3] > 0
-                #     base[mask, ...] = 0
-                #     base = recolor(base, (8, 8, 8, 255))
-                #     spa = layer_ontop(spa, base, 0, 0)
                 if tile.data.unit:
                     sprite = np.array(sprite)
                     sprite = np.pad(sprite, ((1, 1), (1, 1), (0, 0)))
@@ -135,22 +120,6 @@ class RenderCog(commands.Cog):
                         - tile.z * self.SPACING
                 )
                 frame.alpha_composite(sprite, (int(x_pos), int(y_pos)))
-
-                # TODO: Reimplement whatever the fuck this is
-                # base = final[..., 3]
-                # base = cv2.filter2D(src=base, ddepth=-1, kernel=ker)
-                # base = np.dstack((base, base, base, base))
-                # mask = final[..., 3] > 0
-                # base[mask, ...] = 0
-                # base = recolor(base, (8, 8, 8, 255))
-                # final = layer_ontop(final, base, 0, 0)
-                # end = Image.new("RGBA", ((width + height + 2) * 12, (width + height + 7) * 6), (0x40, 0x44, 0x64))
-                # ea = np.array(end, dtype=np.uint8)
-                # final = layer_ontop(ea, final, 0, 0)
-                # # -m=2 effect
-                # dim = final.shape[:2] * np.array((2, 2))
-                # dim = dim.astype(int)
-                # final = cv2.resize(final[:, ::-1], dim[::-1], interpolation=cv2.INTER_NEAREST)[:, ::-1]
 
             frame = np.array(frame)
             frame = np.pad(frame, ((1, 1), (1, 1), (0, 0)))
@@ -175,7 +144,7 @@ class RenderCog(commands.Cog):
     def get_sprite(self, tile: Tile, wobble: int) -> Image.Image | None:
         name = tile.name
         key = f"{name} {wobble} {tile.direction}"
-        if key in self.sprite_cache:
+        if key in self.sprite_cache and False:
             return self.sprite_cache[key]
 
         if tile.data.directory == "custom_text_":
@@ -194,17 +163,16 @@ class RenderCog(commands.Cog):
                 raise CustomError(f"Files for `{name}` not found.\nPath: `{path}`")
         self.sprite_cache[key] = img
         return img
-    
+
     def custom_text(self, name):
-        word = name.removeprefix("text_")
-        lines = []
+        word = name.removeprefix("text_").lower()
         word_len = len(word)
         if "/" in word:
             lines = word.split("/")
         else:
             lines = [word]
             if word_len > 3:
-                lines = [word[:word_len//2],  word[word_len//2:]]
+                lines = [word[:word_len // 2], word[word_len // 2:]]
 
         if len(lines) == 1:
             line = lines[0]
@@ -212,71 +180,58 @@ class RenderCog(commands.Cog):
             if len(line) > 2:
                 letter_mode = 3
         else:
-            if len(lines) > 2:
-                raise CustomError("You can't make 3 or more line text, since it's too tall.")
             letter_mode = 4
         empty = Image.new("RGBA", (24, 24), (0, 0, 0, 0))
         current_y = CUSTOM_HEIGHT[letter_mode]
+        if len(lines) > 2:
+            current_y -= max((len(lines) - 2) // 6, 9)
         for line in lines:
             path_sizes = []
             for char in line:
                 path = f"data/special/letters/{char}"
-                print(path)
                 char_paths = []
 
                 for char_path in Path(path).glob("*.png"):
                     if char_path.stem.startswith(str(letter_mode)):
-                        print("Letter found!")
                         char_paths.append(char_path.stem)
-                
+
                 path_size = [int(path_name[-1]) for path_name in char_paths]
                 path_sizes.append(path_size.copy())
 
             # this is a mess
             possible_solutions = itertools.product(*path_sizes)
-            current_solutions = []
-            solved_length_dist = 100 # there's absolutely no way that the total length is >109
+            current_solution = None
+            solved_length_dist = 100  # there's absolutely no way that the total length is >109
             target_length = CUSTOM_WIDTH[letter_mode]
 
-            print(possible_solutions, path_sizes)
-
+            count = 0
             for solution in possible_solutions:
-                for i in [1,2]:
-                    print(solved_length_dist)
-                    if abs(sum(solution) + i*(len(solution) - 1) - target_length) == solved_length_dist:
-                        try:
-                            if current_solutions[0][1] == 2 and i == 1:
-                                current_solutions = []
-                                current_solutions.append((solution, i))
-                                solved_length_dist = abs(sum(solution) + i*(len(solution) - 1) - target_length)
-                                print("Solutions cleared.")
-                        except:
-                            pass
-                        if not (current_solutions[0][1] == 2 and i == 1):
-                            current_solutions.append((solution, i))
-                            print("Solution added.")
-                    elif abs(sum(solution) + i*(len(solution) - 1) - target_length) < solved_length_dist:
-                        current_solutions = []
-                        current_solutions.append((solution, i))
-                        solved_length_dist = abs(sum(solution) + i*(len(solution) - 1) - target_length)
-                        print("Solutions cleared.")
-            print(current_solutions)
-            active_solution = current_solutions[0] # TODO: implement a better system
-            solved_length = sum(active_solution[0]) + active_solution[1]*(len(active_solution[0]) - 1)
+                for i in (1, 2):
+                    count += 1
+                    dist = abs(sum(solution) + i * (len(solution) - 1) - target_length)
+                    if dist == solved_length_dist:
+                        if current_solution is not None:
+                            if current_solution[1] == 2 and i == 1:
+                                current_solution = (solution, i)
+                                solved_length_dist = dist
+                    elif dist < solved_length_dist:
+                        current_solution = (solution, i)
+                        solved_length_dist = dist
+            solution, spacing = current_solution
+            solved_length = sum(solution) + spacing * (len(solution) - 1)
             if solved_length > 24:
                 raise CustomError("Custom text is too long!")
             current_x = 12 - (solved_length // 2)
-            for i in range(len(active_solution[0])):
-                char_length = active_solution[0][i]
+            for i in range(len(solution)):
+                char_length = solution[i]
                 char = line[i]
                 char_path = f"data/special/letters/{char}/{letter_mode}_{char_length}.png"
                 char_img = Image.open(char_path)
                 empty.alpha_composite(char_img, (current_x, current_y))
-                current_x += char_length + active_solution[1]
+                current_x += char_length + spacing
             current_y += 6
         return empty
 
-            
     async def render(self, scene: Scene, buffer: BytesIO, flagdata: FlagData):
         """Renders a scene into a buffer."""
         frames: list[Image.Image] = await self.render_scene(scene, flagdata)
@@ -307,5 +262,7 @@ class RenderCog(commands.Cog):
         )
         # TODO: Command parroting
         await ctx.send(file=discord.File(buf, filename))
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(RenderCog(bot))
